@@ -144,7 +144,7 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
 		if (planes[i].valid && ! planes[i].reported && planes[i].latlong_valid > 1)
                         for (j = i + 1; j < PlaneListCount; ++j)
                         {
-                                if (planes[i].valid && ! planes[j].reported && planes[i].latlong_valid > 1)
+                                if (planes[j].valid && ! planes[j].reported && planes[j].latlong_valid > 1)
                                 {
                                         horiz_sep = CalcDistance(planes[i].lat_radians, planes[i].lon_radians, planes[j].lat_radians, planes[j].lon_radians);
                                         verti_sep = abs(planes[i].altitude - planes[j].altitude);
