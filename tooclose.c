@@ -87,17 +87,41 @@ CalcDistance(double lat1, double lon1, double lat2, double lon2)
 static void
 ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t verti_sep, int32_t time_sep)
 {
-	printf("0: %06X %s %s %8.4f %8.4f %d | 1: %06X %s %s %8.4f %8.4f %d | horiz: %2.2f, vert: %d, seconds: %d\n",
+        char *ch;
+        char buffer0[512], buffer1[512];
+
+        ch = ctime(&plane0->last_seen);
+        if (ch)
+        {
+                strcpy(buffer0, ch);
+                ch = strchr(buffer0, '\n');
+                if (ch)
+                        *ch = 0;
+        }
+        else
+                strcpy(buffer0, "timeprobs0");
+        ch = ctime(&plane1->last_seen);
+        if (ch)
+        {
+                strcpy(buffer1, ch);
+                ch = strchr(buffer1, '\n');
+                if (ch)
+                        *ch = 0;
+        }
+        else
+                strcpy(buffer1, "timeprobs1");
+
+        assert(plane0->icao != plane1->icao);
+
+	printf("0: %06X %s %8.4f %8.4f %d | 1: %06X %s %8.4f %8.4f %d | horiz: %2.2f, vert: %d, seconds: %d\n",
 	       plane0->icao,
 	       plane0->callsign,
-	       ctime(&plane0->last_seen),
                plane0->latitude,
                plane0->longitude,
                plane0->altitude,
 
 	       plane1->icao,
 	       plane1->callsign,
-	       ctime(&plane1->last_seen),
                plane1->latitude,
                plane1->longitude,
                plane1->altitude,
@@ -117,12 +141,10 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
 
 	for (i = 0; i < PlaneListCount - 1; ++i)
         {
-		if (planes[i].valid &&
-                    ! planes[i].reported &&
-                    planes[i].latlong_valid > 1)
+		if (planes[i].valid && ! planes[i].reported && planes[i].latlong_valid > 1)
                         for (j = i + 1; j < PlaneListCount; ++j)
                         {
-                                if (! planes[j].reported)
+                                if (planes[i].valid && ! planes[j].reported && planes[i].latlong_valid > 1)
                                 {
                                         horiz_sep = CalcDistance(planes[i].lat_radians, planes[i].lon_radians, planes[j].lat_radians, planes[j].lon_radians);
                                         verti_sep = abs(planes[i].altitude - planes[j].altitude);
