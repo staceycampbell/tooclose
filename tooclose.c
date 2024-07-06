@@ -27,7 +27,7 @@ typedef struct plane_t {
 	uint32_t icao;
 	time_t last_seen;
 	time_t last_speed;
-	time_t last_location;
+	time_t last_location_time;
 	char callsign[CALLSIGN_LEN];
 	uint32_t latlong_valid;
 	float latitude;
@@ -79,7 +79,7 @@ CalcDistance(double lat1, double lon1, double lat2, double lon2)
 	dist = sin(lat1) * sin(lat2) + cos(lat1) * cos(lat2) * cos(theta);
 	dist = acos(dist);
 	dist = rad2deg(dist);
-	dist = dist * 60.0 * 1.1515;
+	dist = dist * 60.0 * 1.1515 * 0.8684; // nautical miles https://www.geodatasource.com/developers/c
 
 	return dist;
 }
@@ -88,32 +88,22 @@ static void
 ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t verti_sep, int32_t time_sep)
 {
         char *ch;
-        char buffer0[512], buffer1[512];
+        char buffer[512];
 
         ch = ctime(&plane0->last_seen);
         if (ch)
         {
-                strcpy(buffer0, ch);
-                ch = strchr(buffer0, '\n');
+                strncpy(buffer, ch, sizeof(buffer) - 1);
+                ch = strchr(buffer, '\n');
                 if (ch)
                         *ch = 0;
         }
         else
-                strcpy(buffer0, "timeprobs0");
-        ch = ctime(&plane1->last_seen);
-        if (ch)
-        {
-                strcpy(buffer1, ch);
-                ch = strchr(buffer1, '\n');
-                if (ch)
-                        *ch = 0;
-        }
-        else
-                strcpy(buffer1, "timeprobs1");
+                strcpy(buffer, "time problems");
 
         assert(plane0->icao != plane1->icao);
 
-	printf("0: %06X %s %8.4f %8.4f %d | 1: %06X %s %8.4f %8.4f %d | horiz: %2.2f, vert: %d, seconds: %d\n",
+	printf("0: %06X %s %8.5f %8.5f %d | 1: %06X %s %8.5f %8.5f %d | horiz: %2.3f, vert: %d, seconds: %d, time: %s\n",
 	       plane0->icao,
 	       plane0->callsign,
                plane0->latitude,
@@ -128,7 +118,10 @@ ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t ve
 
                horiz_sep,
                verti_sep,
-               time_sep);
+               time_sep,
+               buffer);
+        printf("\thttps://globe.adsb.fi/?icao=%x\n", plane0->icao);
+        printf("\thttps://globe.adsb.fi/?icao=%x\n", plane1->icao);
 }
 
 static void
@@ -148,8 +141,8 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
                                 {
                                         horiz_sep = CalcDistance(planes[i].lat_radians, planes[i].lon_radians, planes[j].lat_radians, planes[j].lon_radians);
                                         verti_sep = abs(planes[i].altitude - planes[j].altitude);
-                                        time_sep = abs(planes[i].last_seen - planes[j].last_seen);
-                                        if (horiz_sep < 1.0 && verti_sep < 1000 && time_sep < 3)
+                                        time_sep = abs(planes[i].last_location_time - planes[j].last_location_time);
+                                        if (horiz_sep < 0.75 && verti_sep < 750 && time_sep < 2)
                                         {
                                                 ReportClosePlanes(&planes[i], &planes[j], horiz_sep, verti_sep, time_sep);
                                                 ++planes[i].reported;
@@ -177,11 +170,15 @@ InsertPlane(plane_t planes[PLANE_COUNT], uint32_t icao)
 	planes[i].icao = icao;
 	planes[i].last_seen = 0;
 	planes[i].last_speed = 0;
-	planes[i].last_location = 0;
+	planes[i].last_location_time = 0;
 	strcpy(planes[i].callsign, "unknown ");
 	planes[i].latlong_valid = 0;
 	planes[i].speed = -1;
 	planes[i].altitude = -100000;
+        planes[i].latitude = 0;
+        planes[i].longitude = 0;
+        planes[i].lat_radians = 0;
+        planes[i].lon_radians = 0;
 
 	return &planes[i];
 }
@@ -214,6 +211,7 @@ ProcessMSG3(char **pp, plane_t *plane)
 	int32_t altitude;
 	float lat, lon;
 	double metar_temp_c, metar_elevation_m;
+        double location_check;
 
 	field = 0;
 	while ((ch = strsep(pp, ",")) && field < 3)
@@ -236,7 +234,7 @@ ProcessMSG3(char **pp, plane_t *plane)
 		return;
 	sscanf(ch, "%f", &lon);
 	
-	plane->last_location = plane->last_seen;
+	plane->last_location_time = plane->last_seen;
 	plane->altitude = altitude;
         if (plane->latlong_valid > 0)
         {
@@ -250,6 +248,12 @@ ProcessMSG3(char **pp, plane_t *plane)
         plane->lat_radians = deg2rad(lat);
         plane->lon_radians = deg2rad(lon);
 	++plane->latlong_valid;
+        if (plane->latlong_valid > 1)
+        {
+                location_check = CalcDistance(plane->lat_radians, plane->lon_radians, plane->prev_latitude_radians, plane->prev_longitude_radians);
+                if (location_check > 4) // NM diff between location squitters
+                        plane->latlong_valid = 0; // posible corrupted location data in squitter
+        }
 	METARFetch(NearestMETAR, &metar_temp_c, &metar_elevation_m);
 }
 
@@ -341,7 +345,10 @@ CleanPlanes(plane_t planes[PLANE_COUNT], time_t now, int enable_bot)
 			++plane_count;
 			duration = now - planes[i].last_seen;
 			if (duration > 10)
+                        {
 				planes[i].valid = 0;
+				planes[i].latlong_valid = 0;
+                        }
 			else
 				last_valid_plane = i;
 		}
