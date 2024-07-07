@@ -14,6 +14,8 @@
 
 // https://www.aviationweather.gov/docs/metar/stations.txt
 static const char NearestMETAR[] = "KVNY"; // replace with closest METAR source
+static const double Horizontal_Separation = 0.75; // nautical miles
+static const int32_t Vertical_Separation = 750; // feet
 
 #define PLANE_COUNT 1024 // never more than about 70 planes visible from the casa
 #define CALLSIGN_LEN 16
@@ -103,22 +105,23 @@ ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t ve
 
         assert(plane0->icao != plane1->icao);
 
-	printf("0: %06X %s %8.5f %8.5f %d | 1: %06X %s %8.5f %8.5f %d | horiz: %2.3f, vert: %d, seconds: %d, time: %s\n",
+	printf("0: %06X %s %.5f,%.5f %dft %dkts | 1: %06X %s %.5f,%.5f %dft %dkts | horiz: %2.3f, vert: %d, time: %s\n",
 	       plane0->icao,
 	       plane0->callsign,
                plane0->latitude,
                plane0->longitude,
                plane0->altitude,
+               plane0->speed,
 
 	       plane1->icao,
 	       plane1->callsign,
                plane1->latitude,
                plane1->longitude,
                plane1->altitude,
+               plane1->speed,
 
                horiz_sep,
                verti_sep,
-               time_sep,
                buffer);
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane0->icao);
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane1->icao);
@@ -134,15 +137,15 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
 
 	for (i = 0; i < PlaneListCount - 1; ++i)
         {
-		if (planes[i].valid && ! planes[i].reported && planes[i].latlong_valid > 1)
+		if (planes[i].valid && ! planes[i].reported && planes[i].latlong_valid > 2)
                         for (j = i + 1; j < PlaneListCount; ++j)
                         {
-                                if (planes[j].valid && ! planes[j].reported && planes[j].latlong_valid > 1)
+                                if (planes[j].valid && ! planes[j].reported && planes[j].latlong_valid > 2)
                                 {
                                         horiz_sep = CalcDistance(planes[i].lat_radians, planes[i].lon_radians, planes[j].lat_radians, planes[j].lon_radians);
                                         verti_sep = abs(planes[i].altitude - planes[j].altitude);
                                         time_sep = abs(planes[i].last_location_time - planes[j].last_location_time);
-                                        if (horiz_sep < 0.75 && verti_sep < 750 && time_sep < 2)
+                                        if (horiz_sep < Horizontal_Separation && verti_sep < Vertical_Separation && time_sep == 0)
                                         {
                                                 ReportClosePlanes(&planes[i], &planes[j], horiz_sep, verti_sep, time_sep);
                                                 ++planes[i].reported;
@@ -251,8 +254,8 @@ ProcessMSG3(char **pp, plane_t *plane)
         if (plane->latlong_valid > 1)
         {
                 location_check = CalcDistance(plane->lat_radians, plane->lon_radians, plane->prev_latitude_radians, plane->prev_longitude_radians);
-                if (location_check > 4) // NM diff between location squitters
-                        plane->latlong_valid = 0; // posible corrupted location data in squitter
+                if (location_check > 3) // NM diff between location squitters
+                        plane->latlong_valid = 0; // posible corrupted location data in squitter, start over
         }
 	METARFetch(NearestMETAR, &metar_temp_c, &metar_elevation_m);
 }

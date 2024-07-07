@@ -21,7 +21,7 @@ Date2Epoch(const char *date_s, const char *time_s)
 	tm.tm_mon -= 1;
 	tm.tm_isdst = -1;
 	t = mktime(&tm);
-	if (ms >= 500)
+	if (ms >= 500) // round to the nearest second
 		++t;
 
 	return t;
