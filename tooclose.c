@@ -156,8 +156,8 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
                                 if (PlaneCheck(&planes[j]))
                                 {
                                         horiz_sep = CalcDistance(planes[i].lat_radians, planes[i].lon_radians, planes[j].lat_radians, planes[j].lon_radians);
-                                        verti_sep = abs(planes[i].altitude - planes[j].altitude);
-                                        time_sep = abs(planes[i].last_location_time - planes[j].last_location_time);
+                                        verti_sep = labs(planes[i].altitude - planes[j].altitude);
+                                        time_sep = labs(planes[i].last_location_time - planes[j].last_location_time);
                                         if (horiz_sep < Horizontal_Separation && verti_sep < Vertical_Separation && time_sep == 0)
                                         {
                                                 ReportClosePlanes(&planes[i], &planes[j], horiz_sep, verti_sep, time_sep);
