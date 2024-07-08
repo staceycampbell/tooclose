@@ -14,10 +14,12 @@
 
 // https://www.aviationweather.gov/docs/metar/stations.txt
 static const char NearestMETAR[] = "KVNY"; // replace with closest METAR source
-static const double Horizontal_Separation = 0.75; // nautical miles
+
+// Limits
+static const double Horizontal_Separation = 2.0 / 3.0; // nautical miles
 static const int32_t Vertical_Separation = 750; // feet
-static const int32_t Speed_Minimum = 50; // kts
-static const int32_t Altitude_Minimum = 500; // feet
+static const int32_t Speed_Minimum = 50; // both planes faster than in kts, filter out hovering TV helicopters
+static const int32_t Altitude_Minimum = 600; // both planes higher than in feet, filter out local airport operations
 
 #define PLANE_COUNT 1024 // never more than about 70 planes visible from the casa
 #define CALLSIGN_LEN 16
