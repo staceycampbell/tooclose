@@ -1,5 +1,5 @@
 CC := cc
-CFLAGS := -I/usr/include/libxml2 -O2 -Wall -Wno-dangling-else
+CFLAGS := -I/usr/include/libxml2 -O2 -Wall -Wno-dangling-else -Wno-stringop-truncation
 LDLIBS := -lm -lcurl -lxml2
 
 OBJS := metar.o datetoepoch.o

@@ -21,6 +21,7 @@ static const int32_t Speed_Minimum = 50; // both planes faster than in kts, filt
 static const int32_t Altitude_Minimum = 600; // both planes higher than in feet, filter out local airport operations
 
 #define PLANE_COUNT 1024 // never more than about 70 planes visible from the casa
+#define RAW_STRING_LEN 256
 #define CALLSIGN_LEN 16
 
 #define DATA_STATS_DURATION (60 * 60) // report some stats every hour
@@ -46,6 +47,7 @@ typedef struct plane_t {
 	int32_t speed;
 	int32_t altitude;
         int32_t reported;
+        char msg3[RAW_STRING_LEN];
 } plane_t;
 
 typedef struct data_stats_t {
@@ -124,6 +126,11 @@ ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t ve
                horiz_sep,
                verti_sep,
                buffer);
+        if ((ch = strchr(plane0->msg3, '\n')) != 0)
+                *ch = '\0';
+        if ((ch = strchr(plane1->msg3, '\n')) != 0)
+                *ch = '\0';
+        printf("\t%s\n\t%s\n", plane0->msg3, plane1->msg3);
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane0->icao);
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane1->icao);
 }
@@ -219,7 +226,7 @@ FindPlane(plane_t planes[PLANE_COUNT], uint32_t icao)
 }
 
 static void
-ProcessMSG3(char **pp, plane_t *plane)
+ProcessMSG3(char **pp, plane_t *plane, char raw_string[RAW_STRING_LEN])
 {
 	char *ch;
 	int field;
@@ -269,6 +276,7 @@ ProcessMSG3(char **pp, plane_t *plane)
                 if (location_check > 3) // NM diff between location squitters
                         plane->latlong_valid = 0; // posible corrupted location data in squitter, start over
         }
+        strncpy(plane->msg3, raw_string, RAW_STRING_LEN - 1);
 	METARFetch(NearestMETAR, &metar_temp_c, &metar_elevation_m);
 }
 
@@ -308,7 +316,7 @@ ProcessMSG1(char **pp, plane_t *plane)
 }
 
 static time_t
-ProcessPlane(char **pp, plane_t planes[PLANE_COUNT], uint32_t message_id, uint32_t icao)
+ProcessPlane(char **pp, plane_t planes[PLANE_COUNT], uint32_t message_id, uint32_t icao, char *raw_string)
 {
 	plane_t *plane;
 	char *ch, *date_s, *time_s;
@@ -334,7 +342,7 @@ ProcessPlane(char **pp, plane_t planes[PLANE_COUNT], uint32_t message_id, uint32
 		ProcessMSG1(pp, plane);
 		break;
 	case 3 :
-		ProcessMSG3(pp, plane);
+		ProcessMSG3(pp, plane, raw_string);
 		break;
 	case 4 :
 		ProcessMSG4(pp, plane);
@@ -408,7 +416,7 @@ main(int argc, char *argv[])
 	int i, opt, enable_bot, usage;
 	uint32_t message_id, icao;
 	time_t seen, receiver_now;
-	char buffer[1024];
+	char buffer[1024], raw_string[256];
 	char *p;
 	char *ch;
 	plane_t planes[PLANE_COUNT];
@@ -454,6 +462,8 @@ main(int argc, char *argv[])
 	while (fgets(buffer, sizeof(buffer), stdin))
 	{
 		p = buffer;
+                strncpy(raw_string, buffer, RAW_STRING_LEN - 1);
+                raw_string[RAW_STRING_LEN - 1] = '\0';
 		ch = strsep(&p, ",");
 		if (ch && strncmp(ch, "MSG", 3) == 0)
 		{
@@ -470,7 +480,7 @@ main(int argc, char *argv[])
 					{
 						ch = strsep(&p, ",");
 						icao = strtoul(ch, 0, 16);
-						seen = ProcessPlane(&p, planes, message_id, icao);
+						seen = ProcessPlane(&p, planes, message_id, icao, raw_string);
 						if (seen != -1)
 							receiver_now = seen;
 					}
