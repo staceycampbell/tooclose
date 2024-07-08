@@ -16,6 +16,8 @@
 static const char NearestMETAR[] = "KVNY"; // replace with closest METAR source
 static const double Horizontal_Separation = 0.75; // nautical miles
 static const int32_t Vertical_Separation = 750; // feet
+static const int32_t Speed_Minimum = 50; // kts
+static const int32_t Altitude_Minimum = 500; // feet
 
 #define PLANE_COUNT 1024 // never more than about 70 planes visible from the casa
 #define CALLSIGN_LEN 16
@@ -103,8 +105,6 @@ ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t ve
         else
                 strcpy(buffer, "time problems");
 
-        assert(plane0->icao != plane1->icao);
-
 	printf("0: %06X %s %.5f,%.5f %dft %dkts | 1: %06X %s %.5f,%.5f %dft %dkts | horiz: %2.3f, vert: %d, time: %s\n",
 	       plane0->icao,
 	       plane0->callsign,
@@ -127,6 +127,17 @@ ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t ve
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane1->icao);
 }
 
+static uint32_t
+PlaneCheck(plane_t *plane)
+{
+        uint32_t valid_plane;
+
+        valid_plane = plane->valid && ! plane->reported && plane->latlong_valid > 2 &&
+                plane->speed >= Speed_Minimum && plane->altitude >= Altitude_Minimum;
+
+        return valid_plane;
+}
+
 static void
 DetectClosePlanes(plane_t planes[PLANE_COUNT])
 {
@@ -137,10 +148,10 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
 
 	for (i = 0; i < PlaneListCount - 1; ++i)
         {
-		if (planes[i].valid && ! planes[i].reported && planes[i].latlong_valid > 2)
+		if (PlaneCheck(&planes[i]))
                         for (j = i + 1; j < PlaneListCount; ++j)
                         {
-                                if (planes[j].valid && ! planes[j].reported && planes[j].latlong_valid > 2)
+                                if (PlaneCheck(&planes[j]))
                                 {
                                         horiz_sep = CalcDistance(planes[i].lat_radians, planes[i].lon_radians, planes[j].lat_radians, planes[j].lon_radians);
                                         verti_sep = abs(planes[i].altitude - planes[j].altitude);
@@ -438,7 +449,7 @@ main(int argc, char *argv[])
 	PlaneListCount = 0;
 	DataStats.next = time(0) + DATA_STATS_DURATION;
 
-	receiver_now = time(0); // stop optimizer from complaining
+	receiver_now = time(0);
 	while (fgets(buffer, sizeof(buffer), stdin))
 	{
 		p = buffer;
