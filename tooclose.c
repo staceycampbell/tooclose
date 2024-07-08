@@ -8,7 +8,6 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include "castotas.h"
 #include "metar.h"
 #include "datetoepoch.h"
 
