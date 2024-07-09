@@ -250,11 +250,17 @@ ProcessMSG3(char **pp, plane_t *plane, char raw_string[RAW_STRING_LEN])
 	if (ch == 0)
 		return;
 
+        lat = 1000.0;
 	sscanf(ch, "%f", &lat);
+        if (lat == 1000.0) // bad squiiter
+                return;
 	ch = strsep(pp, ",");
 	if (ch == 0)
 		return;
+        lon = 1000.0;
 	sscanf(ch, "%f", &lon);
+        if (lon == 1000.0) // bad squitter
+                return;
 	
 	plane->last_location_time = plane->last_seen;
 	plane->altitude = altitude;
