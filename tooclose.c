@@ -17,16 +17,18 @@ static const char NearestMETAR[] = "KVNY"; // replace with closest METAR source
 // Limits
 static const double Horizontal_Separation = 2.0 / 3.0; // nautical miles
 static const int32_t Vertical_Separation = 750; // feet
-static const int32_t Speed_Minimum = 120; // at least one plane faster than in kts, filter out hovering TV helicopters and light plane departures
-static const int32_t Altitude_Minimum = 600; // both planes higher than in feet, filter out local airport operations
+static const int32_t Speed_Minimum = 120; // at least one plane faster than in kts, filter out multiple hovering TV helicopters and light plane departures
+static const int32_t Altitude_Minimum = 700; // both planes higher than in feet, filter out local airport operations
+
+// logging
+static const char LogDir[] = "./log";
+static const char LogBasename[] = "separation";
 
 #define PLANE_COUNT 1024 // never more than about 70 planes visible from the casa
 #define RAW_STRING_LEN 256
 #define CALLSIGN_LEN 16
 
 #define DATA_STATS_DURATION (60 * 60) // report some stats every hour
-
-static const char BotToken[] = "token.secret";
 
 typedef struct plane_t {
         uint32_t valid;
@@ -92,21 +94,51 @@ CalcDistance(double lat1, double lon1, double lat2, double lon2)
 }
 
 static void
-ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t verti_sep, int32_t time_sep)
+LogPlane(FILE *fp, plane_t *plane)
+{
+        fprintf(fp, "%06X", plane->icao);
+        fprintf(fp, "#%s", plane->callsign);
+        fprintf(fp, "#%.5f", plane->latitude);
+        fprintf(fp, "#%.5f", plane->longitude);
+        fprintf(fp, "#%d", plane->altitude);
+        fprintf(fp, "#%d", plane->speed);
+        fprintf(fp, "#%s", plane->msg3);
+}
+
+static void
+LogClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t verti_sep, char time_str[])
+{
+        char filename[1024];
+        struct tm t;
+        FILE *fp;
+
+        assert(localtime_r(&plane0->last_seen, &t));
+        sprintf(filename, "%s/%s-%04d-%02d-%02d.log", LogDir, LogBasename, t.tm_year + 1900, t.tm_mon, t.tm_mday);
+        assert((fp = fopen(filename, "a")) != 0);
+        fprintf(fp, "%2.3f#%d#%s#", horiz_sep, verti_sep, time_str);
+        LogPlane(fp, plane0);
+        fprintf(fp, "#");
+        LogPlane(fp, plane1);
+        fprintf(fp, "\n");
+        fclose(fp);
+}
+
+static void
+ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t verti_sep, int32_t time_sep, int enable_log)
 {
         char *ch;
         char buffer[512];
 
         ch = ctime(&plane0->last_seen);
+        assert(ch);
+        strncpy(buffer, ch, sizeof(buffer) - 1);
+        ch = strchr(buffer, '\n');
         if (ch)
-        {
-                strncpy(buffer, ch, sizeof(buffer) - 1);
-                ch = strchr(buffer, '\n');
-                if (ch)
-                        *ch = 0;
-        }
-        else
-                strcpy(buffer, "time problems");
+                *ch = 0;
+        if ((ch = strchr(plane0->callsign, ' ')) != 0)
+                *ch = '\0';
+        if ((ch = strchr(plane1->callsign, ' ')) != 0)
+                *ch = '\0';
 
         printf("0: %06X %s %.5f,%.5f %dft %dkts | 1: %06X %s %.5f,%.5f %dft %dkts | horiz: %2.3f, vert: %d, time: %s\n",
                plane0->icao,
@@ -130,9 +162,16 @@ ReportClosePlanes(plane_t *plane0, plane_t *plane1, double horiz_sep, int32_t ve
                 *ch = '\0';
         if ((ch = strchr(plane1->msg3, '\n')) != 0)
                 *ch = '\0';
+        if ((ch = strchr(plane0->msg3, '\r')) != 0)
+                *ch = '\0';
+        if ((ch = strchr(plane1->msg3, '\r')) != 0)
+                *ch = '\0';
         printf("\t%s\n\t%s\n", plane0->msg3, plane1->msg3);
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane0->icao);
         printf("\thttps://globe.adsb.fi/?icao=%x\n", plane1->icao);
+
+        if (enable_log)
+                LogClosePlanes(plane0, plane1, horiz_sep, verti_sep, buffer);
 }
 
 static uint32_t
@@ -149,7 +188,7 @@ PlaneCheck(plane_t *plane0, plane_t *plane1)
 }
 
 static void
-DetectClosePlanes(plane_t planes[PLANE_COUNT])
+DetectClosePlanes(plane_t planes[PLANE_COUNT], int enable_log)
 {
         int32_t i, j;
         int32_t verti_sep;
@@ -167,7 +206,7 @@ DetectClosePlanes(plane_t planes[PLANE_COUNT])
                                 time_sep = labs(planes[i].last_location_time - planes[j].last_location_time);
                                 if (horiz_sep < Horizontal_Separation && verti_sep < Vertical_Separation && time_sep == 0)
                                 {
-                                        ReportClosePlanes(&planes[i], &planes[j], horiz_sep, verti_sep, time_sep);
+                                        ReportClosePlanes(&planes[i], &planes[j], horiz_sep, verti_sep, time_sep, enable_log);
                                         ++planes[i].reported;
                                         ++planes[j].reported;
                                 }
@@ -360,7 +399,7 @@ ProcessPlane(char **pp, plane_t planes[PLANE_COUNT], uint32_t message_id, uint32
 }
 
 static void
-CleanPlanes(plane_t planes[PLANE_COUNT], time_t now, int enable_bot)
+CleanPlanes(plane_t planes[PLANE_COUNT], time_t now)
 {
         int i, last_valid_plane;
         uint32_t plane_count;
@@ -420,7 +459,7 @@ ReportDataStats(plane_t planes[PLANE_COUNT])
 int
 main(int argc, char *argv[])
 {
-        int i, opt, enable_bot, usage;
+        int i, opt, enable_log, usage;
         uint32_t message_id, icao;
         time_t seen, receiver_now;
         char buffer[1024], raw_string[256];
@@ -428,13 +467,13 @@ main(int argc, char *argv[])
         char *ch;
         plane_t planes[PLANE_COUNT];
 
-        enable_bot = 0;
+        enable_log = 0;
         usage = 0;
-        while ((opt = getopt(argc, argv, "b")) != EOF)
+        while ((opt = getopt(argc, argv, "l")) != EOF)
                 switch (opt)
                 {
-                case 'b' :
-                        enable_bot = 1;
+                case 'l' :
+                        enable_log = 1;
                         break;
                 default :
                         usage = 1;
@@ -442,22 +481,11 @@ main(int argc, char *argv[])
                 }
         if (usage)
         {
-                fprintf(stderr, "usage: %s [-b]\n", argv[0]);
-                fprintf(stderr, "\t-b = enable bot reporting\n\n");
+                fprintf(stderr, "usage: %s [-l]\n", argv[0]);
+                fprintf(stderr, "\t-l = enable log reporting\n\n");
                 fprintf(stderr, "\texample usage: nc localhost 30003 | %s\n", argv[0]);
                 
                 return 1;
-        }
-
-        if (enable_bot)
-        {
-                struct stat statbuf;
-                
-                if (stat(BotToken, &statbuf))
-                {
-                        fprintf(stderr, "%s: cannot stat bot token file %s\n", argv[0], BotToken);
-                        exit(1);
-                }
         }
 
         for (i = 0; i < PLANE_COUNT; ++i)
@@ -494,8 +522,8 @@ main(int argc, char *argv[])
                                 }
                         }
                 }
-                CleanPlanes(planes, receiver_now, enable_bot);
-                DetectClosePlanes(planes);
+                CleanPlanes(planes, receiver_now);
+                DetectClosePlanes(planes, enable_log);
                 ReportDataStats(planes);
         }
 
