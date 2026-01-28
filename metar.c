@@ -12,14 +12,11 @@
 #include <libxml/xmlreader.h>
 #include "metar.h"
 
-static const char *AviationWeatherFormat = "https://aviationweather.gov/cgi-bin/data/dataserver.php?"
-	"requestType=retrieve&"
-	"dataSource=metars&"
-	"stationString=%s"
-	"&startTime=" PRIu64 "&"
-	"hoursBeforeNow=0&"
-	"format=xml&"
-	"mostRecent=true";
+static const char *AviationWeatherFormat = "https://aviationweather.gov/api/data/metar?"
+	"ids=%s&"
+	"hours=1.5&"
+	"taf=false&"
+	"format=xml";
 
 #define XML_BUFFER_SIZE 65536
 static char XML_buffer[XML_BUFFER_SIZE];
@@ -61,7 +58,7 @@ METARFetchNow(const char *station, time_t now, double *temp_c, double *elevation
 	}
 
 	XML_buffer_index = 0;
-	sprintf(url, AviationWeatherFormat, station, (uint64_t)now);
+	sprintf(url, AviationWeatherFormat, station);
 
 	curlhandle = curl_easy_init();
 	curl_easy_setopt(curlhandle, CURLOPT_URL, url);
